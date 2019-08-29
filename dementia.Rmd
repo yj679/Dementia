@@ -1,0 +1,752 @@
+---
+title: "Research Work"
+author: "Yilu"
+date: "4/12/2019"
+output:
+  html_document: default
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Simulation Study
+
+Load libraries and set seed.
+```{r eval=FALSE}
+library(rockchalk)
+library(SGL)
+library(survival)
+library(Amelia)
+library(mitools)
+library(mix)
+library(MAMI)
+
+set.seed(1995)
+```
+
+
+### Simulate Survival Data
+
+Generate 200 survival datasets with 20 variables and 100 observations. The censored rate is contolled to be 30%. The correlation pattern among 20 variables is compound symmetic with rho = 0.3.
+
+```{r eval=FALSE}
+simulate_data <- function(dataset, n, baseline, params = list(), coveff = list(), censor_rate){
+  # Simulate 20 variables with compound symmetic correlation 0.3
+  sigma = lazyCov(Rho = 0.3, Sd = 1.0, d = 20)
+  dt <- MASS::mvrnorm(n = n,mu = c(rep(0,20)),Sigma=sigma)
+  x = list()
+  for (i in 1:20) {
+    x[[i]] = dt[,i]
+  }
+  x1 = x[[1]]
+  x2 = x[[2]]
+  x3 = x[[3]]
+  x4 = x[[4]]
+  x5 = x[[5]]
+  x6 = x[[6]]
+  x7 = x[[7]]
+  x8 = x[[8]]
+  x9 = x[[9]]
+  x10 = x[[10]]
+  x11 = x[[11]]
+  x12 = x[[12]]
+  x13 = x[[13]]
+  x14 = x[[14]]
+  x15 = x[[15]]
+  x16 = x[[16]]
+  x17 = x[[17]]
+  x18 = x[[18]]
+  x19 = x[[19]]
+  x20 = x[[20]]
+  # Draw from a U(0,1) random variable
+  u <- runif(n)
+  # Simulate survival times depending on the baseline hazard
+  if (baseline == "Exponential") {
+    t <- -log(u) / (params$lambda * exp(x1 * coveff$beta1 + x5 * coveff$beta2 + x10 * coveff$beta3 
+                                        + x11 * coveff$beta4 + x15 * coveff$beta5 + x20 * coveff$beta6))
+  } else {
+    t <- (-log(u) / (params$lambda * exp(x1 * coveff$beta1 + x5 * coveff$beta2 + x10 * coveff$beta3 
+                                         + x11 * coveff$beta4 + x15 * coveff$beta5 + x20 * coveff$beta6)))^(1 / params$gamma)
+  }
+  
+  # Simulate censored times
+  h = rexp(length(t)) * censor_rate
+  # EndTime is the time that the study ends
+  h = pmin(h, params$EndTime) 
+  # Make event indicator variable applying administrative censoring at t = 5
+  d <- as.numeric(t < h)
+  t <- pmin(t, h)
+  # Return a data.frame
+  data.frame(dataset = dataset, x1 = x1, x2 = x2, x3 = x3, x4 =x4, x5 = x5, x6 = x6, 
+             x7 = x7, x8 = x8, x9 = x9, x10 =x10, x11 = x11, x12 = x12, x13 = x13, x14 =x14, 
+             x15 = x15, x16 = x16, x17 = x17, x18 = x18, x19 = x19, x20 =x20,
+             t = t, d = d, n = n, baseline = baseline, stringsAsFactors = FALSE)
+}
+
+# Simulate 200 replicates
+reps <- 1:200
+data <- list()
+data[["n = 100, baseline = Exp"]] <- lapply(
+  X = reps,
+  FUN = simulate_data,
+  n = 100,
+  baseline = "Exponential",
+  params = list(lambda = 0.5, EndTime=5),
+  coveff = list(beta1 = 0.5, beta2 = -1.2, beta3 = 1.8, 
+                beta4 = 0.5, beta5 = -1.2, beta6 = 1.8),
+  censor_rate = 3000
+)
+```
+
+### Generate Missing Data
+
+X1 - X10 are fully observed and X11 - X20 have missing values resulting in 60% complete-cases.
+
+```{r eval=FALSE}
+# sepcify the number of observations and alpha controls missing degree
+N=100
+alpha = -3
+missingdata = list()
+for (i in 1:200) {
+  x1 = data[["n = 100, baseline = Exp"]][[i]]$x1
+  x2 = data[["n = 100, baseline = Exp"]][[i]]$x2
+  x3 = data[["n = 100, baseline = Exp"]][[i]]$x3
+  x4 = data[["n = 100, baseline = Exp"]][[i]]$x4
+  x5 = data[["n = 100, baseline = Exp"]][[i]]$x5
+  x6 = data[["n = 100, baseline = Exp"]][[i]]$x6
+  x7 = data[["n = 100, baseline = Exp"]][[i]]$x7
+  x8 = data[["n = 100, baseline = Exp"]][[i]]$x8
+  x9 = data[["n = 100, baseline = Exp"]][[i]]$x9
+  x10 = data[["n = 100, baseline = Exp"]][[i]]$x10
+  x11 = data[["n = 100, baseline = Exp"]][[i]]$x11
+  x12 = data[["n = 100, baseline = Exp"]][[i]]$x12
+  x13 = data[["n = 100, baseline = Exp"]][[i]]$x13
+  x14 = data[["n = 100, baseline = Exp"]][[i]]$x14
+  x15 = data[["n = 100, baseline = Exp"]][[i]]$x15
+  x16 = data[["n = 100, baseline = Exp"]][[i]]$x16
+  x17 = data[["n = 100, baseline = Exp"]][[i]]$x17
+  x18 = data[["n = 100, baseline = Exp"]][[i]]$x18
+  x19 = data[["n = 100, baseline = Exp"]][[i]]$x19
+  x20 = data[["n = 100, baseline = Exp"]][[i]]$x20
+
+  alpha.11<- exp(alpha+0.5*x1)/(1+exp(alpha+0.5*x1))
+  alpha.12<- exp(alpha+0.5*x2)/(1+exp(alpha+0.5*x2))
+  alpha.13<- exp(alpha+0.5*x3)/(1+exp(alpha+0.5*x3))
+  alpha.14<- exp(alpha+0.5*x4)/(1+exp(alpha+0.5*x4))
+  alpha.15<- exp(alpha+0.5*x5)/(1+exp(alpha+0.5*x5))
+  alpha.16<- exp(alpha+0.5*x6)/(1+exp(alpha+0.5*x6))
+  alpha.17<- exp(alpha+0.5*x7)/(1+exp(alpha+0.5*x7))
+  alpha.18<- exp(alpha+0.5*x8)/(1+exp(alpha+0.5*x8))
+  alpha.19<- exp(alpha+0.5*x9)/(1+exp(alpha+0.5*x9))
+  alpha.20<- exp(alpha+0.5*x10)/(1+exp(alpha+0.5*x10))
+
+  r.x11.mcar<-rbinom(N,1,prob=alpha.11) #yes/no for whether x1 is missing
+  r.x12.mcar<-rbinom(N,1,prob=alpha.12)
+  r.x13.mcar<-rbinom(N,1,prob=alpha.13)
+  r.x14.mcar<-rbinom(N,1,prob=alpha.14) #yes/no for whether x1 is missing
+  r.x15.mcar<-rbinom(N,1,prob=alpha.15)
+  r.x16.mcar<-rbinom(N,1,prob=alpha.16)
+  r.x17.mcar<-rbinom(N,1,prob=alpha.17) #yes/no for whether x1 is missing
+  r.x18.mcar<-rbinom(N,1,prob=alpha.18)
+  r.x19.mcar<-rbinom(N,1,prob=alpha.19)
+  r.x20.mcar<-rbinom(N,1,prob=alpha.20)
+  x11.mcar<-x11*(1-r.x11.mcar)+r.x11.mcar*99999  #x1.mcar=x1 if not missing, 99999 if missing
+  x12.mcar<-x12*(1-r.x12.mcar)+r.x12.mcar*99999
+  x13.mcar<-x13*(1-r.x13.mcar)+r.x13.mcar*99999
+  x14.mcar<-x14*(1-r.x14.mcar)+r.x14.mcar*99999  #x1.mcar=x1 if not missing, 99999 if missing
+  x15.mcar<-x15*(1-r.x15.mcar)+r.x15.mcar*99999
+  x16.mcar<-x16*(1-r.x16.mcar)+r.x16.mcar*99999
+  x17.mcar<-x17*(1-r.x17.mcar)+r.x17.mcar*99999  #x1.mcar=x1 if not missing, 99999 if missing
+  x18.mcar<-x18*(1-r.x18.mcar)+r.x18.mcar*99999
+  x19.mcar<-x19*(1-r.x19.mcar)+r.x19.mcar*99999
+  x20.mcar<-x20*(1-r.x20.mcar)+r.x20.mcar*99999
+  x11.mcar[x11.mcar==99999]=NA                  #change 99999 to NA (R's notation for missing)
+  x12.mcar[x12.mcar==99999]=NA
+  x13.mcar[x13.mcar==99999]=NA
+  x14.mcar[x14.mcar==99999]=NA                  #change 99999 to NA (R's notation for missing)
+  x15.mcar[x15.mcar==99999]=NA
+  x16.mcar[x16.mcar==99999]=NA
+  x17.mcar[x17.mcar==99999]=NA                  #change 99999 to NA (R's notation for missing)
+  x18.mcar[x18.mcar==99999]=NA
+  x19.mcar[x19.mcar==99999]=NA
+  x20.mcar[x20.mcar==99999]=NA 
+  time = data[["n = 100, baseline = Exp"]][[i]]$t
+  status = data[["n = 100, baseline = Exp"]][[i]]$d
+  testdata = rbind(x1,x2,x3,x4,x5,x6,x7,x8,x9,x10,
+                   x11.mcar,x12.mcar,x13.mcar,x14.mcar,x15.mcar,x16.mcar,x17.mcar,x18.mcar,x19.mcar,x20.mcar)
+  testdata = t(testdata)
+  testdata = data.frame(testdata)
+  testdata = cbind(testdata,time,status)
+  missingdata[[i]] = testdata
+}
+```
+
+### Multiple imputation
+
+Multiple imputation with Amelia II.
+
+```{r results="hide", eval = FALSE}
+# 200 imputated datasets
+sdata = list()
+for (i in 1:200) {
+  sdata[[i]] = amelia(missingdata[[i]],m=5)
+}
+```
+
+### Variable Selection with MAMI
+
+Multiple selection with AIC 
+
+```{r eval=FALSE}
+# coefficient estimates of beta with AIC 
+beta.ma.a = list()
+# coefficient estimates of beta with LASSO
+beta.ma.l = list()
+for (i in 1:200) {
+  simp = sdata[[i]]
+  beta.ma.a[[i]] = mami(simp, model="cox", outcome=c("time","status"),
+                      method="MS.criterion", criterion = "AIC")
+  beta.ma.l[[i]] = mami(simp, model="cox", outcome=c("time","status"), method="LASSO")
+}
+
+# Count selected percenatages and measurment performance
+selper = function(beta){
+  # selected times
+vs = c(rep(0,20))
+countI = c()
+countU = c()
+sum1 = 0
+sum2 = 0
+for (i in 1:200) {
+  for (n in 1:20) {
+    if(beta[[i]]$coefficients.s[n,1] == 0){
+      vs[n] = vs[n]
+    }else{
+      vs[n] = vs[n] + 1
+    }
+  }
+  
+  # calculate sensitivity, specificty, and geometic means
+  I = 0
+  U = 0
+  for (j in c(1,5,10,11,15,20)) {
+    if(beta[[i]]$coefficients.s[j,1] == 0){I = I}else{I = I + 1}
+  }
+  for (j in c(2:4,6:9,12:14,16:19)) {
+    if(beta[[i]]$coefficients.s[j,1] == 0){U = U + 1}else{U = U}
+  }
+  I = I / 6
+  U = U / 14
+  countI = cbind(countI,I)
+  countU = cbind(countU,U)
+  sum1 = sum1 + countI[i]
+  sum2 = sum2 + countU[i]
+}
+SelectedPercent = vs/200
+sen = sum1/200
+spe = sum2/200
+G = sqrt(sen*spe)
+
+# Count specificity, 
+# times of true CI for each variable
+VI = c(rep(0,20))
+for (i in 1:200) {
+  lower = beta[[i]]$coefficients.s[,3]
+  upper = beta[[i]]$coefficients.s[,4]
+  for (p in 1:20) {
+    if(p == 1 | p == 11){
+      if(lower[p] <= 0.5){if(upper[p] >= 0.5){VI[p] = VI[p] + 1}else{VI[p] = VI[p]}
+      }else{VI[p] = VI[p]}
+    }else if(p == 5 | p == 15){
+      if(lower[p] <= -1.2){if(upper[p] >= -1.2){VI[p] = VI[p] + 1}else{VI[p] = VI[p]}
+      }else{VI[p] = VI[p]}
+    }else if(p == 10 | p == 20){
+      if(lower[p] <= 1.8){if(upper[p] >= 1.8){VI[p] = VI[p] + 1}else{VI[p] = VI[p]}
+      }else{VI[p] = VI[p]}
+    }else{
+      if(lower[p] <= 0){if(upper[p] >= 0){VI[p] = VI[p] + 1}else{VI[p] = VI[p]}
+      }else{VI[p] = VI[p]}
+    }
+  }
+}
+
+CoverageProbable = VI/200
+
+data.frame(SelectedPercent, sen, spe, G, CoverageProbable)
+}
+
+# selected percenatages and measurment performance for AIC
+selper(beta.ma.a)
+# selected percenatages and measurment performance for LASSO
+selper(beta.ma.l)
+```
+
+### Group LASSO
+
+```{r eval=FALSE}
+# Cross valiadation error
+cvfit.fix.g = list()
+# order of selected lambda
+ord.fix.g = c()
+for (i in 1:200) {
+  idata = sdata[[i]]
+  d = 0
+  save(idata, file = "imputations.RData")
+  t = missingdata[[i]][,"time"]
+  delta = missingdata[[i]][,"status"]
+  for (k in 1:5) {
+    idata$imputations[[k]][,"time"] = NULL
+    idata$imputations[[k]][,"status"] = NULL
+    d = cbind(d,idata$imputations[[k]])
+  }
+  d = d[c(-1)]
+  tdata = d
+  datat = list(x = tdata, time = t, status= delta)
+  index = c(rep(1:20,5))
+  # fit = SGL(datat, index, type = "cox", alpha = 0, min.frac = 0.05)
+  # fitbeta.fix2.2.60[[i]] = fit
+  cvfit.fix.g[[i]] = cvSGL(datat, index, type = "cox", alpha = 0, min.frac = 0.05)
+  ord.fix.g[i] = which.min(cvfit.fix.g[[i]]$lldiff)
+}
+
+# count selected times and calculate measrument performances 
+# selected times
+vs = c(rep(0,20))
+countI = c()
+countU = c()
+sum1 = 0
+sum2 = 0
+# s = 0
+for (i in 1:200) {
+  if(ord.fix.g[i] - 3 <= 0){
+    ord = ord.fix.g[i]
+  }else{
+    ord = ord.fix.g[i] - 3
+  }
+  for (n in 1:20) {
+    if(cvfit.fix.g[[i]]$fit$beta[n,ord] == 0){
+      vs[n] = vs[n]
+    }else{
+      vs[n] = vs[n] + 1
+    }
+  }
+  
+  I = 0
+  U = 0
+  for (j in c(1,5,10,11,15,20)) {
+    if(cvfit.fix.g[[i]]$fit$beta[j,ord] == 0){I = I}else{I = I + 1}
+  }
+  for (j in c(2:4,6:9,12:14,16:19)) {
+    if(cvfit.fix.g[[i]]$fit$beta[j,ord] == 0){U = U + 1}else{U = U}
+  }
+  I = I / 6
+  U = U / 14
+  countI = cbind(countI,I)
+  countU = cbind(countU,U)
+  sum1 = sum1 + countI[i]
+  sum2 = sum2 + countU[i]
+}
+# selected percentages
+vs/200
+# sensitivity
+sen = sum1/200
+sen
+# specificity
+spe = sum2/200
+spe
+# Geometic mean
+G = sqrt(sen*spe)
+G
+
+# calculate coverage probability
+est = c(rep(0,20))
+upper = c(rep(0,20))
+lower = c(rep(0,20))
+beta.fix.g = list()
+VI = c(rep(0,20)) # times of true CI for each variable
+for (i in 1:200) {
+  ccv = missingdata[[i]]
+  ccv = na.omit(ccv)
+  time = ccv$time
+  status = ccv$status
+  
+  ord = ord.fix.g[i] - 3
+  v = c()
+  for (n in 1:20) {
+    if(cvfit.fix.g[[i]]$fit$beta[n,ord] == 0){
+      v = v
+      est[n] = 0
+      upper[n] = 0
+      lower[n] = 0
+    }else{
+      v = cbind(v,n)
+    }
+  }
+  
+  if(is.null(v) == TRUE){
+    next
+  }else{
+    idata = sdata[[i]]
+    save(idata, file = "imputations.RData")
+    time = missingdata[[i]][,"time"]
+    status = missingdata[[i]][,"status"]
+    truedata = list()
+    for (k in 1:5) {
+      idata$imputations[[k]][,"time"] = NULL
+      idata$imputations[[k]][,"status"] = NULL
+      truedata[[k]] = idata$imputations[[k]][c(v)]
+    }
+    allimp = list()
+    betas = list()
+    se.cox = list()
+    allimp = lapply(truedata,function(X){coxph(Surv(time,status) ~ ., data = X)})
+    betas = MIextract(allimp, fun = coef)
+    se.cox = MIextract(allimp,fun = function(x){sqrt(diag(vcov(x)))})
+    beta.est = mi.inference(betas,se.cox)$est
+    lo = mi.inference(betas,se.cox)$lower
+    up = mi.inference(betas,se.cox)$upper
+  }
+  
+  for (k in 1:length(v)) {
+    est[v[k]] = beta.est[k]
+    upper[v[k]] = up[k]
+    lower[v[k]] = lo[k]
+  }
+  
+  for (p in 1:20) {
+    if(p == 1 | p == 11){
+      if(lower[p] <= 0.5){if(upper[p] >= 0.5){VI[p] = VI[p] + 1}else{VI[p] = VI[p]}
+      }else{VI[p] = VI[p]}
+    }else if(p == 5 | p == 15){
+      if(lower[p] <= -1.2){if(upper[p] >= -1.2){VI[p] = VI[p] + 1}else{VI[p] = VI[p]}
+      }else{VI[p] = VI[p]}
+    }else if(p == 10 | p == 20){
+      if(lower[p] <= 1.8){if(upper[p] >= 1.8){VI[p] = VI[p] + 1}else{VI[p] = VI[p]}
+      }else{VI[p] = VI[p]}
+    }else{
+      if(lower[p] <= 0){if(upper[p] >= 0){VI[p] = VI[p] + 1}else{VI[p] = VI[p]}
+      }else{VI[p] = VI[p]}
+    }
+  }
+  
+  beta.fix.g[[i]] = est
+}
+# coverage probability
+VI/200
+```
+
+
+### CC
+
+```{r eval=FALSE}
+cvfit.fix.c = list()
+ord.fix.c = c()
+for (i in 1:200) {
+  cdata = na.omit(missingdata[[i]])
+  tdata = cdata[,1:20]
+  t = cdata[,"time"]
+  d = cdata[,"status"]
+  index = c(1:20)
+  datat = list(x = tdata, time = t, status= d)
+  # fits = SGL(datat, index, type = "cox", alpha = 1, min.frac = 0.05)
+  # fitbeta.fix.c[[i]] = fits
+  cvfit.fix.c[[i]] = cvSGL(datat, index, type = "cox", alpha = 1, min.frac = 0.05)
+  ord.fix.c[i] = which.min(cvfit.fix.c[[i]]$lldiff)
+}
+
+vs = c(rep(0,20))
+countI = c()
+countU = c()
+sum1 = 0
+sum2 = 0
+# s = 0
+for (i in 1:200) {
+  if(ord.fix.c[i] - 3 <= 0){
+    ord = ord.fix.c[i]
+  }else{
+    ord = ord.fix.c[i] - 3
+  }
+  # ord = ord.fix2.1[i]
+  # s = s + ord
+  for (n in 1:20) {
+    if(cvfit.fix.c[[i]]$fit$beta[n,ord] == 0){
+      vs[n] = vs[n]
+    }else{
+      vs[n] = vs[n] + 1
+    }
+  }
+  
+  I = 0
+  U = 0
+  for (j in c(1,5,10,11,15,20)) {
+    if(cvfit.fix.c[[i]]$fit$beta[j,ord] == 0){I = I}else{I = I + 1}
+  }
+  for (j in c(2:4,6:9,12:14,16:19)) {
+    if(cvfit.fix.c[[i]]$fit$beta[j,ord] == 0){U = U + 1}else{U = U}
+  }
+  I = I / 6
+  U = U / 14
+  countI = cbind(countI,I)
+  countU = cbind(countU,U)
+  sum1 = sum1 + countI[i]
+  sum2 = sum2 + countU[i]
+}
+vs/200
+sen = sum1/200
+sen
+spe = sum2/200
+spe
+G = sqrt(sen*spe)
+G
+
+est = c(rep(0,20))
+upper = c(rep(0,20))
+lower = c(rep(0,20))
+beta.fix.c = list()
+VI = c(rep(0,20)) # times of true CI for each variable
+for (i in 1:200) {
+  ccv = missingdata[[i]]
+  ccv = na.omit(ccv)
+  time = ccv$time
+  status = ccv$status
+  
+  ord = ord.fix.c[i] - 3
+  v = c()
+  for (n in 1:20) {
+    if(cvfit.fix.c[[i]]$fit$beta[n,ord] == 0){
+      v = v
+      est[n] = 0
+      upper[n] = 0
+      lower[n] = 0
+    }else{
+      v = cbind(v,n)
+    }
+  }
+  
+  if(is.null(v) == TRUE){
+    next
+  }else{
+    td = ccv[c(v)]
+    out = coxph(Surv(time,status)~., data = td)
+    beta.est = out$coefficients
+    up = out$coefficients + 1.96 * sqrt(diag(out$var))
+    lo = out$coefficients - 1.96 * sqrt(diag(out$var))
+  }
+    
+  for (k in 1:length(v)) {
+    est[v[k]] = beta.est[k]
+    upper[v[k]] = up[k]
+    lower[v[k]] = lo[k]
+  }
+    
+  for (p in 1:20) {
+    if(p == 1 | p == 11){
+      if(lower[p] <= 0.5){if(upper[p] >= 0.5){VI[p] = VI[p] + 1}else{VI[p] = VI[p]}
+      }else{VI[p] = VI[p]}
+    }else if(p == 5 | p == 15){
+      if(lower[p] <= -1.2){if(upper[p] >= -1.2){VI[p] = VI[p] + 1}else{VI[p] = VI[p]}
+      }else{VI[p] = VI[p]}
+    }else if(p == 10 | p == 20){
+      if(lower[p] <= 1.8){if(upper[p] >= 1.8){VI[p] = VI[p] + 1}else{VI[p] = VI[p]}
+      }else{VI[p] = VI[p]}
+    }else{
+      if(lower[p] <= 0){if(upper[p] >= 0){VI[p] = VI[p] + 1}else{VI[p] = VI[p]}
+      }else{VI[p] = VI[p]}
+    }
+  }
+  
+  beta.fix.c[[i]] = est
+}
+
+VI/200
+```
+
+### Box Plot
+
+```{r eval=FALSE}
+boxp = function(beta,type,title){
+  vc.c = list()
+  df = NULL
+  for (j in 1:20) {
+    v = c(rep(0,200))
+    for (i in 1:200) {
+      if (type == "MAMI"){
+        v[i] = beta[[i]]$coefficients.s[j,1]
+      }else if (type == "SGL"){
+        v[i] = beta[[i]][j]
+      }
+    }
+    vc.c[[j]] = v
+    df = cbind(df,vc.c[[j]])
+  }
+  colnames(df) = c("X1","X2","X3","X4","X5","X6","X7","X8","X9","X10",
+                   "X11","X12","X13","X14","X15","X16","X17","X18","X19","X20")
+  
+  df = data.frame(df)
+  
+  library(reshape2)
+  library(ggplot2)
+  df.m = melt(df)
+  plot = ggplot(aes(x = variable, y = value), data = df.m) +
+    geom_boxplot() +
+    geom_hline(yintercept = c(-1.2, 0, .5, 1.8), linetype = 2) +
+    ylab("Coefficient estimates") +
+    ggtitle(title)
+  return(plot)
+}
+
+library(gridExtra)
+b1 = boxp(beta.ma.a,type = "MAMI", title = "Box plot of mAIC")
+b2 = boxp(beta.ma.l,type = "MAMI", title = "Box plot of mLASSO")
+b3 = boxp(beta.fix.c,type = "SGL", title = "Box plot of CC")
+b4 = boxp(beta.fix.g,type = "SGL", title = "Box plot of gLASSO")
+grid.arrange(b3,b4,b1,b2,ncol = 2,top = "Box plots")
+
+
+```
+
+# HRS Application
+
+load data, covert nan to na, and add factors
+
+```{r}
+library(sas7bdat)
+
+# read data
+s2 = read.sas7bdat("/Users/yilujin/Documents/SASUniverisityEdition/myfolders/thesis/new7/surdata3.sas7bdat")
+
+# convert NAN to NA in s2
+for (i in 1:37) {
+  s2[,i][is.infinite(s2[,i]) | is.nan(s2[,i]) ] <- NA 
+}
+
+# convert numeric variable to catergorical variable
+facfun = function(s){
+  s$HACOHORT = factor(s$HACOHORT)
+  s$RAGENDER = factor(s$RAGENDER) 
+  s$R4BWC20 = factor(s$R4BWC20) 
+  s$R4DY = factor(s$R4DY)
+  s$R4MO = factor(s$R4MO)
+  s$R4YR = factor(s$R4YR)
+  s$R4DW = factor(s$R4DW)
+  s$R4SCIS = factor(s$R4SCIS)
+  s$R4CACT = factor(s$R4CACT) 
+  s$R4PRES = factor(s$R4PRES)
+  s$R4VP = factor(s$R4VP)
+  s$R4SLFMEM = factor(s$R4SLFMEM)
+  s$R4SHLT = factor(s$R4SHLT)
+  s$R4HOSP = factor(s$R4HOSP)
+  s$R4NRSHOM = factor(s$R4NRSHOM)
+  s$R4DOCTOR = factor(s$R4DOCTOR)
+  s$R4OUTPT = factor(s$R4OUTPT)
+  s$R4DRUGS = factor(s$R4DRUGS)
+  s$R4HOMCAR = factor(s$R4HOMCAR)
+  s$RARACEM = factor(s$RARACEM)
+  s$RARELIG = factor(s$RARELIG)
+  s$RAVETRN = factor(s$RAVETRN)
+  s$R4MPART = factor(s$R4MPART)
+  s$R4MOMLIV = factor(s$R4MOMLIV)
+  s$R4DADLIV = factor(s$R4DADLIV)
+  return(data.frame(s))
+}
+
+s22 = facfun(s2)
+```
+
+### Complete Cases 
+```{r eval=FALSE}
+cc = na.omit(s22)
+t = cc$time
+d = cc$delta
+tdata = cc[,1:35]
+tdata = model.matrix(~ . + 0, tdata)
+index = c(1,1,2,rep(3,6),4,rep(5,2),6,rep(7,4),8:11,
+          rep(12,4),13:22,rep(23,2),24:32,rep(33,4),34:35)
+datat = list(x = tdata, time = t, status= d)
+fit.1 = SGL(datat, index, type = "cox", alpha = 1,min.frac = 0.05)
+cvfit.1 = cvSGL(datat, index, type = "cox", alpha = 1,min.frac = 0.05)
+plot(cvfit.1)
+cvfit.1$fit$beta[1:52,which.min(cvfit.1$lldiff)]
+```
+
+### Group LASSO
+
+Multiple imputation with MICE
+```{r eval=FALSE}
+tempDataM = mice(s22,m=5,maxit = 20,meth=c('logreg','pmm','polyreg','logreg','polyreg','pmm','polyreg',
+                                           'logreg','pmm','pmm','pmm','polr','pmm',rep('logreg',6),
+                                           rep('pmm',3),'polyreg',rep('logreg',8),'pmm','polr',
+                                           'logreg','logreg','pmm','pmm'))
+```
+
+Group LASSO with imputed dataset
+```{r eval=FALSE}
+t = s22[,"time"]
+delta = s22[,"delta"]
+d = 0
+impData = list()
+for (k in 1:5) {
+  impData[[k]] = complete(tempDataM,k)
+  impData[[k]][,"time"] = NULL
+  impData[[k]][,"delta"] = NULL
+  d = cbind(d,impData[[k]])
+}  
+d = d[c(-1)]
+tdata = model.matrix(~ . + 0, d)
+datat = list(x = tdata, time = t, status= delta)
+index = c(1,rep(c(1,2,rep(3,6),4,rep(5,2),6,rep(7,4),8:11,
+                  rep(12,4),13:22,rep(23,2),24:32,rep(33,4),34:35),5))
+fit.3 = SGL(datat, index, type = "cox", alpha = 0, min.frac = 0.05)
+cvfit.3 = cvSGL(datat, index, type = "cox", alpha = 0, min.frac = 0.05)
+plot(cvfit.3)
+cvfit.3$fit$beta[1:52,which.min(cvfit.3$lldiff)]
+```
+
+### Calculate HR and CI after variable selection
+```{r eval=FALSE}
+myvars <- c("HACOHORT","RAEDYRS","R4AGEY_E",
+            "R4HOSP","R4DRUGS","R4HOMCAR",
+            "R4IMRC","R4DLRC","R4SER7","R4MO","R4DY","R4YR","R4DW",
+            "R4CACT","R4PRES","R4VP","R4VOCAB",
+            "R4SLFMEM","R4MOMLIV")
+time = s22$time
+status = s22$delta
+truedata1 = list()
+truedata1[[1]] = complete(tempDataM,1)[myvars]
+truedata1[[2]] = complete(tempDataM,2)[myvars]
+truedata1[[3]] = complete(tempDataM,3)[myvars]
+truedata1[[4]] = complete(tempDataM,4)[myvars]
+truedata1[[5]] = complete(tempDataM,5)[myvars]
+allimp = lapply(truedata1,function(X){coxph(Surv(time,status) ~ ., data = X)})
+betas = MIextract(allimp, fun = coef)
+se.cox = MIextract(allimp,fun = function(x){sqrt(diag(vcov(x)))})
+as.data.frame(mi.inference(betas,se.cox))
+exp(mi.inference(betas,se.cox)$lower)
+exp(mi.inference(betas,se.cox)$upper)
+exp(mi.inference(betas,se.cox)$est)
+```
+
+### MAMI 
+```{r eval=FALSE}
+###### LASSO
+m11 = mami(tempDataM, model="cox", outcome=c("time","delta"), method="LASSO", 
+           add.factor = c("HACOHORT","RAGENDER","R4BWC20","R4DY",
+                          "R4MO","R4YR","R4DW","R4SCIS","R4CACT","R4PRES",
+                          "R4VP","R4HOSP","R4NRSHOM","R4DOCTOR","R4DRUGS",
+                          "R4HOMCAR","R4OUTPT","RARACEM", "RARELIG", "RAVETRN",
+                          "R4MPART","R4DADLIV","R4MOMLIV","R4SLFMEM","R4SHLT"),report.exp=TRUE)
+summary(m11)
+
+###### AIC selection
+m21 = mami(tempDataM, model="cox", outcome=c("time","delta"), method="MS.criterion", criterion = "AIC",
+           add.factor = c("HACOHORT","RAGENDER","R4BWC20","R4DY",
+                          "R4MO","R4YR","R4DW","R4SCIS","R4CACT","R4PRES",
+                          "R4VP","R4HOSP","R4NRSHOM","R4DOCTOR","R4DRUGS",
+                          "R4HOMCAR","R4OUTPT","RARACEM", "RARELIG", "RAVETRN",
+                          "R4MPART","R4DADLIV","R4MOMLIV","R4SLFMEM","R4SHLT"),report.exp=TRUE)
+summary(m21)
+```
+
